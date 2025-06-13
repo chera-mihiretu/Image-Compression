@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "264919542032",
+    "project_id": "image-compressor-c0aa9",
+    "storage_bucket": "image-compressor-c0aa9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:264919542032:android:554513833ad9f969acdd95",
+        "android_client_info": {
+          "package_name": "com.example.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCPcFQz41fRkAlR-sJataqB5CPEBY-uB6w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
