@@ -48,6 +48,9 @@ dependencies:
   flutter_dotenv: ^5.1.0
   photo_view: ^0.15.0
   uuid: ^4.5.1
+  get_it: ^7.7.0
+  google_fonts: ^6.2.1
+  shared_preferences: ^2.2.3
 
 dev_dependencies:
   flutter_test:

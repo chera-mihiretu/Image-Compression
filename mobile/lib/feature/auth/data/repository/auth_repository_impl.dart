@@ -9,10 +9,8 @@ class AuthRepositoryImpl implements AuthRepository {
   AuthRepositoryImpl(this.dataSource);
 
   @override
-  Stream<Option<AppUser>> authStateChanges() async* {
-    await for (final user in dataSource.authStateChanges()) {
-      yield optionOf(user);
-    }
+  Stream<Option<AppUser>> authStateChanges() {
+    return dataSource.authStateChanges().map((user) => optionOf(user));
   }
 
   @override
