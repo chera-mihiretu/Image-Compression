@@ -20,6 +20,17 @@ class ImageCompressRequested extends ImageEvent {
   List<Object?> get props => [filePath];
 }
 
+class ImageCompressWithPreviewRequested extends ImageEvent {
+  final String filePath;
+  final bool skipPreview;
+  const ImageCompressWithPreviewRequested({
+    required this.filePath,
+    this.skipPreview = false,
+  });
+  @override
+  List<Object?> get props => [filePath, skipPreview];
+}
+
 class ImageHistoryRequested extends ImageEvent {
   const ImageHistoryRequested();
 }

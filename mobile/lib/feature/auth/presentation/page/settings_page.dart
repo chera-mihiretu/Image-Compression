@@ -61,7 +61,6 @@ class _SettingsPageState extends State<SettingsPage>
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
       _autoCompress = prefs.getBool('auto_compress') ?? false;
       _compressionQuality = prefs.getDouble('compression_quality') ?? 0.8;
       _selectedTheme = prefs.getString('selected_theme') ?? 'System';
@@ -70,7 +69,6 @@ class _SettingsPageState extends State<SettingsPage>
 
   Future<void> _saveSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('notifications_enabled', _notificationsEnabled);
     await prefs.setBool('auto_compress', _autoCompress);
     await prefs.setDouble('compression_quality', _compressionQuality);
     await prefs.setString('selected_theme', _selectedTheme);
@@ -138,176 +136,206 @@ class _SettingsPageState extends State<SettingsPage>
           ),
         ],
       ),
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: SlideTransition(
-          position: _slideAnimation,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Profile Section
-                _buildSectionCard(
-                  title: 'Profile',
-                  icon: Icons.person,
-                  children: [_buildProfileTile()],
-                ),
+      body: BlocBuilder<AuthBloc, AuthState>(
+        builder: (context, authState) {
+          if (authState.isUnknown) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-                const SizedBox(height: 16),
+          if (authState.user == null) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: AppTheme.errorColor,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'User not authenticated',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Please sign in to access settings',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
 
-                // Compression Settings
-                _buildSectionCard(
-                  title: 'Compression',
-                  icon: Icons.compress,
+          final user = authState.user!;
+
+          return FadeTransition(
+            opacity: _fadeAnimation,
+            child: SlideTransition(
+              position: _slideAnimation,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildSwitchTile(
-                      title: 'Auto-compress on upload',
-                      subtitle: 'Automatically compress images when uploading',
-                      value: _autoCompress,
-                      onChanged: (value) {
-                        setState(() {
-                          _autoCompress = value;
-                        });
-                      },
+                    // Profile Section
+                    _buildSectionCard(
+                      title: 'Profile',
+                      icon: Icons.person,
+                      children: [_buildProfileTile(user)],
                     ),
-                    _buildSliderTile(
-                      title: 'Compression Quality',
-                      subtitle: 'Balance between file size and image quality',
-                      value: _compressionQuality,
-                      onChanged: (value) {
-                        setState(() {
-                          _compressionQuality = value;
-                        });
-                      },
-                      min: 0.1,
-                      max: 1.0,
-                      divisions: 9,
-                      label: '${(_compressionQuality * 100).round()}%',
-                    ),
-                  ],
-                ),
 
-                const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                // App Settings
-                _buildSectionCard(
-                  title: 'App Settings',
-                  icon: Icons.settings,
-                  children: [
-                    _buildSwitchTile(
-                      title: 'Notifications',
-                      subtitle:
-                          'Receive notifications about compression status',
-                      value: _notificationsEnabled,
-                      onChanged: (value) {
-                        setState(() {
-                          _notificationsEnabled = value;
-                        });
-                      },
+                    // Compression Settings
+                    _buildSectionCard(
+                      title: 'Compression',
+                      icon: Icons.compress,
+                      children: [
+                        _buildSwitchTile(
+                          title: 'Auto-compress on upload',
+                          subtitle:
+                              'Automatically compress images when uploading',
+                          value: _autoCompress,
+                          onChanged: (value) {
+                            setState(() {
+                              _autoCompress = value;
+                            });
+                          },
+                        ),
+                        _buildSliderTile(
+                          title: 'Compression Quality',
+                          subtitle:
+                              'Balance between file size and image quality',
+                          value: _compressionQuality,
+                          onChanged: (value) {
+                            setState(() {
+                              _compressionQuality = value;
+                            });
+                          },
+                          min: 0.1,
+                          max: 1.0,
+                          divisions: 9,
+                          label: '${(_compressionQuality * 100).round()}%',
+                        ),
+                      ],
                     ),
-                    _buildDropdownTile(
-                      title: 'Theme',
-                      subtitle: 'Choose your preferred app theme',
-                      value: _selectedTheme,
-                      items: ['System', 'Light', 'Dark'],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() {
-                            _selectedTheme = value;
-                          });
-                        }
-                      },
-                    ),
-                  ],
-                ),
 
-                const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                // Storage & Data
-                _buildSectionCard(
-                  title: 'Storage & Data',
-                  icon: Icons.storage,
-                  children: [
-                    _buildInfoTile(
-                      title: 'Storage Used',
-                      subtitle: '156 MB of 1 GB',
-                      trailing: Icon(
-                        Icons.info_outline,
-                        color: AppTheme.infoColor,
-                        size: 20,
-                      ),
+                    // App Settings
+                    _buildSectionCard(
+                      title: 'App Settings',
+                      icon: Icons.settings,
+                      children: [
+                        _buildDropdownTile(
+                          title: 'Theme',
+                          subtitle: 'Choose your preferred app theme',
+                          value: _selectedTheme,
+                          items: ['System', 'Light', 'Dark'],
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() {
+                                _selectedTheme = value;
+                              });
+                            }
+                          },
+                        ),
+                      ],
                     ),
-                    _buildActionTile(
-                      title: 'Clear Cache',
-                      subtitle: 'Free up storage space',
-                      onTap: () {
-                        // TODO: Implement clear cache
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Cache cleared successfully!'),
-                            behavior: SnackBarBehavior.floating,
+
+                    const SizedBox(height: 16),
+
+                    // Storage & Data
+                    _buildSectionCard(
+                      title: 'Storage & Data',
+                      icon: Icons.storage,
+                      children: [
+                        _buildInfoTile(
+                          title: 'Storage Used',
+                          subtitle: '156 MB of 1 GB',
+                          trailing: Icon(
+                            Icons.info_outline,
+                            color: AppTheme.infoColor,
+                            size: 20,
                           ),
-                        );
-                      },
+                        ),
+                        _buildActionTile(
+                          title: 'Clear Cache',
+                          subtitle: 'Free up storage space',
+                          onTap: () {
+                            // TODO: Implement clear cache
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Cache cleared successfully!'),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          },
+                        ),
+                      ],
                     ),
+
+                    const SizedBox(height: 16),
+
+                    // Account Actions
+                    _buildSectionCard(
+                      title: 'Account',
+                      icon: Icons.account_circle,
+                      children: [
+                        _buildActionTile(
+                          title: 'Sign Out',
+                          subtitle: 'Sign out of your account',
+                          onTap: () {
+                            context.read<AuthBloc>().add(
+                              const AuthSignOutRequested(),
+                            );
+                            Navigator.of(
+                              context,
+                            ).pushReplacementNamed(LoginPage.routeName);
+                          },
+                          isDestructive: true,
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // About Section
+                    _buildSectionCard(
+                      title: 'About',
+                      icon: Icons.info,
+                      children: [
+                        _buildInfoTile(title: 'Version', subtitle: '1.0.0'),
+                        _buildInfoTile(title: 'Build Number', subtitle: '1'),
+                        _buildActionTile(
+                          title: 'Privacy Policy',
+                          subtitle: 'Read our privacy policy',
+                          onTap: () {
+                            // TODO: Open privacy policy
+                          },
+                        ),
+                        _buildActionTile(
+                          title: 'Terms of Service',
+                          subtitle: 'Read our terms of service',
+                          onTap: () {
+                            // TODO: Open terms of service
+                          },
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 100),
                   ],
                 ),
-
-                const SizedBox(height: 16),
-
-                // Account Actions
-                _buildSectionCard(
-                  title: 'Account',
-                  icon: Icons.account_circle,
-                  children: [
-                    _buildActionTile(
-                      title: 'Sign Out',
-                      subtitle: 'Sign out of your account',
-                      onTap: () {
-                        context.read<AuthBloc>().add(
-                          const AuthSignOutRequested(),
-                        );
-                        Navigator.of(
-                          context,
-                        ).pushReplacementNamed(LoginPage.routeName);
-                      },
-                      isDestructive: true,
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 16),
-
-                // About Section
-                _buildSectionCard(
-                  title: 'About',
-                  icon: Icons.info,
-                  children: [
-                    _buildInfoTile(title: 'Version', subtitle: '1.0.0'),
-                    _buildInfoTile(title: 'Build Number', subtitle: '1'),
-                    _buildActionTile(
-                      title: 'Privacy Policy',
-                      subtitle: 'Read our privacy policy',
-                      onTap: () {
-                        // TODO: Open privacy policy
-                      },
-                    ),
-                    _buildActionTile(
-                      title: 'Terms of Service',
-                      subtitle: 'Read our terms of service',
-                      onTap: () {
-                        // TODO: Open terms of service
-                      },
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 100),
-              ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -351,23 +379,28 @@ class _SettingsPageState extends State<SettingsPage>
     );
   }
 
-  Widget _buildProfileTile() {
+  Widget _buildProfileTile(dynamic user) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       leading: CircleAvatar(
         radius: 24,
         backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
-        child: Icon(Icons.person, color: AppTheme.primaryColor, size: 24),
+        backgroundImage: user.photoUrl.isNotEmpty
+            ? NetworkImage(user.photoUrl)
+            : null,
+        child: user.photoUrl.isEmpty
+            ? Icon(Icons.person, color: AppTheme.primaryColor, size: 24)
+            : null,
       ),
       title: Text(
-        'John Doe',
+        user.displayName.isNotEmpty ? user.displayName : 'User',
         style: Theme.of(context).textTheme.titleMedium?.copyWith(
           color: AppTheme.textPrimary,
           fontWeight: FontWeight.w600,
         ),
       ),
       subtitle: Text(
-        'john.doe@example.com',
+        user.email.isNotEmpty ? user.email : 'No email provided',
         style: Theme.of(
           context,
         ).textTheme.bodyMedium?.copyWith(color: AppTheme.textSecondary),
@@ -375,6 +408,12 @@ class _SettingsPageState extends State<SettingsPage>
       trailing: Icon(Icons.edit, color: AppTheme.textTertiary, size: 20),
       onTap: () {
         // TODO: Edit profile
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile editing coming soon!'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       },
     );
   }

@@ -1,33 +1,55 @@
 part of 'image_bloc.dart';
 
 class ImageState extends Equatable {
-  final bool isLoading;
+  final bool isLoadingHistory;
+  final bool isCompressing;
   final Failure? failure;
   final List<CompressedImage> images;
+  final String? selectedImagePath;
+  final bool showPreview;
 
   const ImageState({
-    required this.isLoading,
+    required this.isLoadingHistory,
+    required this.isCompressing,
     required this.failure,
     required this.images,
+    this.selectedImagePath,
+    this.showPreview = false,
   });
 
   const ImageState.initial()
-    : isLoading = false,
+    : isLoadingHistory = false,
+      isCompressing = false,
       failure = null,
-      images = const [];
+      images = const [],
+      selectedImagePath = null,
+      showPreview = false;
 
   ImageState copyWith({
-    bool? isLoading,
+    bool? isLoadingHistory,
+    bool? isCompressing,
     Failure? failure,
     List<CompressedImage>? images,
+    String? selectedImagePath,
+    bool? showPreview,
   }) {
     return ImageState(
-      isLoading: isLoading ?? this.isLoading,
+      isLoadingHistory: isLoadingHistory ?? this.isLoadingHistory,
+      isCompressing: isCompressing ?? this.isCompressing,
       failure: failure,
       images: images ?? this.images,
+      selectedImagePath: selectedImagePath ?? this.selectedImagePath,
+      showPreview: showPreview ?? this.showPreview,
     );
   }
 
   @override
-  List<Object?> get props => [isLoading, failure, images];
+  List<Object?> get props => [
+    isLoadingHistory,
+    isCompressing,
+    failure,
+    images,
+    selectedImagePath,
+    showPreview,
+  ];
 }

@@ -3,12 +3,17 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:mobile/cores/constants/app_theme.dart';
+import 'package:mobile/cores/utils/file_utils.dart';
 import 'package:mobile/cores/widgets/empty_state_widget.dart';
+import 'package:mobile/cores/widgets/image_preview_dialog.dart';
 import 'package:mobile/cores/widgets/loading_widget.dart';
+import 'package:mobile/cores/widgets/upload_loading_dialog.dart';
 import 'package:mobile/feature/auth/presentation/bloc/auth_bloc.dart';
 import 'package:mobile/feature/auth/presentation/page/settings_page.dart';
+import 'package:mobile/feature/image_compression/domain/entity/compressed_image.dart';
 import 'package:mobile/feature/image_compression/presentation/bloc/image_bloc.dart';
 import 'package:mobile/feature/image_compression/presentation/page/preview_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ImageListPage extends StatefulWidget {
   const ImageListPage({super.key});
@@ -25,6 +30,10 @@ class _ImageListPageState extends State<ImageListPage>
 
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+
+  String _totalImages = '0';
+  String _storageUsed = '0 B';
+  String _avgQuality = '80%';
 
   @override
   void initState() {
@@ -50,11 +59,85 @@ class _ImageListPageState extends State<ImageListPage>
         );
 
     _startAnimations();
+    _loadSettings();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh settings when dependencies change (e.g., returning from settings page)
+    _loadSettings();
   }
 
   void _startAnimations() async {
     await _fadeController.forward();
     await _slideController.forward();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final quality = prefs.getDouble('compression_quality') ?? 0.8;
+    setState(() {
+      _avgQuality = '${(quality * 100).round()}%';
+    });
+  }
+
+  Future<void> _updateStats(List<CompressedImage> images) async {
+    if (images.isEmpty) {
+      setState(() {
+        _totalImages = '0';
+        _storageUsed = '0 B';
+      });
+      return;
+    }
+
+    // Update total images count
+    setState(() {
+      _totalImages = images.length.toString();
+    });
+
+    // Calculate storage used by compressed images
+    try {
+      final compressedPaths = images.map((img) => img.compressedPath).toList();
+      final storageUsed = await FileUtils.calculateTotalStorageUsed(
+        compressedPaths,
+      );
+
+      setState(() {
+        _storageUsed = storageUsed;
+      });
+    } catch (e) {
+      setState(() {
+        _storageUsed = '0 B';
+      });
+    }
+  }
+
+  void _showPreviewDialog(BuildContext context, String imagePath) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => ImagePreviewDialog(
+        imagePath: imagePath,
+        onCompress: () {
+          Navigator.of(context).pop();
+          context.read<ImageBloc>().add(ImageCompressRequested(imagePath));
+        },
+        onCancel: () {
+          Navigator.of(context).pop();
+          // Reset the state
+          context.read<ImageBloc>().add(const ImageHistoryRequested());
+        },
+      ),
+    );
+  }
+
+  void _showLoadingDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const UploadLoadingDialog(),
+    );
   }
 
   @override
@@ -68,226 +151,303 @@ class _ImageListPageState extends State<ImageListPage>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
-      body: CustomScrollView(
-        slivers: [
-          // Custom App Bar
-          SliverAppBar(
-            expandedHeight: 80,
-            floating: false,
-            pinned: true,
-            backgroundColor: AppTheme.surfaceColor,
-            elevation: 0,
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: const BoxDecoration(
-                  gradient: AppTheme.primaryGradient,
-                ),
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            Icons.compress,
-                            color: Colors.white,
-                            size: 20,
+      body: RefreshIndicator(
+        onRefresh: () async {
+          context.read<ImageBloc>().add(const ImageHistoryRequested());
+          _loadSettings();
+        },
+        color: AppTheme.primaryColor,
+        backgroundColor: AppTheme.backgroundColor,
+        child: BlocListener<ImageBloc, ImageState>(
+          listener: (context, state) {
+            // Show preview dialog when needed
+            if (state.showPreview && state.selectedImagePath != null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _showPreviewDialog(context, state.selectedImagePath!);
+              });
+            }
+
+            // Show loading dialog during compression only (not during history loading)
+            if (state.isCompressing) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _showLoadingDialog(context);
+              });
+            } else {
+              // Hide loading dialog when not compressing
+              if (Navigator.of(context).canPop()) {
+                Navigator.of(context).pop();
+              }
+            }
+          },
+          child: Stack(
+            children: [
+              CustomScrollView(
+                slivers: [
+                  // Custom App Bar
+                  SliverAppBar(
+                    expandedHeight: 80,
+                    floating: false,
+                    pinned: true,
+                    backgroundColor: AppTheme.surfaceColor,
+                    elevation: 0,
+                    flexibleSpace: FlexibleSpaceBar(
+                      background: Container(
+                        decoration: const BoxDecoration(
+                          gradient: AppTheme.primaryGradient,
+                        ),
+                        child: SafeArea(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(
+                                    Icons.compress,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        'Professional',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              color: Colors.white.withOpacity(
+                                                0.8,
+                                              ),
+                                            ),
+                                      ),
+                                      Text(
+                                        'Image Compression',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleMedium
+                                            ?.copyWith(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Row(
+                                  children: [
+                                    IconButton(
+                                      onPressed: () => Navigator.of(
+                                        context,
+                                      ).pushNamed(SettingsPage.routeName),
+                                      icon: Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.2),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.settings,
+                                          color: Colors.white,
+                                          size: 18,
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      onPressed: () {
+                                        context.read<AuthBloc>().add(
+                                          const AuthSignOutRequested(),
+                                        );
+                                        Navigator.of(
+                                          context,
+                                        ).pushReplacementNamed('/login');
+                                      },
+                                      icon: Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.2),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.logout,
+                                          color: Colors.white,
+                                          size: 18,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'Professional',
-                                style: Theme.of(context).textTheme.bodyMedium
-                                    ?.copyWith(
-                                      color: Colors.white.withOpacity(0.8),
-                                    ),
+                      ),
+                    ),
+                  ),
+
+                  // Stats Section
+                  SliverToBoxAdapter(
+                    child: FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            gradient: AppTheme.secondaryGradient,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppTheme.secondaryColor.withOpacity(0.3),
+                                blurRadius: 15,
+                                offset: const Offset(0, 8),
                               ),
-                              Text(
-                                'Image Compression',
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _buildStatItem(
+                                  icon: Icons.image,
+                                  title: 'Total Images',
+                                  value: _totalImages,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              Container(
+                                width: 1,
+                                height: 50,
+                                color: Colors.white.withOpacity(0.3),
+                              ),
+                              Expanded(
+                                child: _buildStatItem(
+                                  icon: Icons.storage,
+                                  title: 'Storage Used',
+                                  value: _storageUsed,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              Container(
+                                width: 1,
+                                height: 50,
+                                color: Colors.white.withOpacity(0.3),
+                              ),
+                              Expanded(
+                                child: _buildStatItem(
+                                  icon: Icons.speed,
+                                  title: 'Quality Setting',
+                                  value: _avgQuality,
+                                  color: Colors.white,
+                                ),
                               ),
                             ],
                           ),
                         ),
-                        Row(
-                          children: [
-                            IconButton(
-                              onPressed: () => Navigator.of(
-                                context,
-                              ).pushNamed(SettingsPage.routeName),
-                              icon: Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Icon(
-                                  Icons.settings,
-                                  color: Colors.white,
-                                  size: 18,
+                      ),
+                    ),
+                  ),
+
+                  // Images Grid
+                  SliverPadding(
+                    padding: const EdgeInsets.all(16),
+                    sliver: BlocBuilder<ImageBloc, ImageState>(
+                      builder: (context, state) {
+                        // Update stats when images change
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          _updateStats(state.images);
+                        });
+
+                        if (state.isLoadingHistory && state.images.isEmpty) {
+                          return SliverToBoxAdapter(
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(32),
+                                child: PrimaryLoadingWidget(
+                                  message: 'Loading your images...',
+                                  size: 50,
                                 ),
                               ),
                             ),
-                            IconButton(
-                              onPressed: () => context.read<AuthBloc>().add(
-                                const AuthSignOutRequested(),
-                              ),
-                              icon: Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Icon(
-                                  Icons.logout,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
+                          );
+                        }
+
+                        if (state.images.isEmpty) {
+                          return SliverToBoxAdapter(
+                            child: NoImagesEmptyState(
+                              onAddImage: () => context.read<ImageBloc>().add(
+                                const ImagePickRequested(fromCamera: false),
                               ),
                             ),
-                          ],
-                        ),
-                      ],
+                          );
+                        }
+
+                        return SliverGrid(
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                mainAxisSpacing: 16,
+                                crossAxisSpacing: 16,
+                                childAspectRatio: 0.8,
+                              ),
+                          delegate: SliverChildBuilderDelegate((
+                            context,
+                            index,
+                          ) {
+                            final item = state.images[index];
+                            return SlideTransition(
+                              position: _slideAnimation,
+                              child: FadeTransition(
+                                opacity: _fadeAnimation,
+                                child: _buildImageCard(item, context),
+                              ),
+                            );
+                          }, childCount: state.images.length),
+                        );
+                      },
                     ),
                   ),
-                ),
+
+                  // Bottom Padding
+                  const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                ],
               ),
-            ),
-          ),
-
-          // Stats Section
-          SliverToBoxAdapter(
-            child: FadeTransition(
-              opacity: _fadeAnimation,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    gradient: AppTheme.secondaryGradient,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.secondaryColor.withOpacity(0.3),
-                        blurRadius: 15,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _buildStatItem(
-                          icon: Icons.image,
-                          title: 'Total Images',
-                          value: '24',
-                          color: Colors.white,
+              // Show loading overlay for history loading
+              BlocBuilder<ImageBloc, ImageState>(
+                builder: (context, state) {
+                  if (state.isLoadingHistory) {
+                    return Container(
+                      color: Colors.black.withOpacity(0.3),
+                      child: const Center(
+                        child: CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
                         ),
-                      ),
-                      Container(
-                        width: 1,
-                        height: 50,
-                        color: Colors.white.withOpacity(0.3),
-                      ),
-                      Expanded(
-                        child: _buildStatItem(
-                          icon: Icons.storage,
-                          title: 'Storage Saved',
-                          value: '156 MB',
-                          color: Colors.white,
-                        ),
-                      ),
-                      Container(
-                        width: 1,
-                        height: 50,
-                        color: Colors.white.withOpacity(0.3),
-                      ),
-                      Expanded(
-                        child: _buildStatItem(
-                          icon: Icons.speed,
-                          title: 'Avg. Quality',
-                          value: '85%',
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // Images Grid
-          SliverPadding(
-            padding: const EdgeInsets.all(16),
-            sliver: BlocBuilder<ImageBloc, ImageState>(
-              builder: (context, state) {
-                if (state.isLoading && state.images.isEmpty) {
-                  return SliverToBoxAdapter(
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: PrimaryLoadingWidget(
-                          message: 'Loading your images...',
-                          size: 50,
-                        ),
-                      ),
-                    ),
-                  );
-                }
-
-                if (state.images.isEmpty) {
-                  return SliverToBoxAdapter(
-                    child: NoImagesEmptyState(
-                      onAddImage: () => context.read<ImageBloc>().add(
-                        const ImagePickRequested(fromCamera: false),
-                      ),
-                    ),
-                  );
-                }
-
-                return SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    childAspectRatio: 0.8,
-                  ),
-                  delegate: SliverChildBuilderDelegate((context, index) {
-                    final item = state.images[index];
-                    return SlideTransition(
-                      position: _slideAnimation,
-                      child: FadeTransition(
-                        opacity: _fadeAnimation,
-                        child: _buildImageCard(item, context),
                       ),
                     );
-                  }, childCount: state.images.length),
-                );
-              },
-            ),
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+            ],
           ),
-
-          // Bottom Padding
-          const SliverToBoxAdapter(child: SizedBox(height: 100)),
-        ],
+        ),
       ),
 
       // Enhanced Floating Action Buttons
