@@ -34,7 +34,7 @@ async def root():
 async def health_check():
     return {"status": "healthy", "service": "image-compression"}
 
-@app.post("/compress")
+@app.api_route("/compress", methods=["POST", "GET"])
 async def compress_image(
     image: UploadFile = File(..., description="Image file to compress"),
     compress_size: Optional[int] = Form(70, description="Compression quality (60-100)")
@@ -57,11 +57,21 @@ async def compress_image(
                 detail="compress_size must be between 60 and 100"
             )
         
-        # Validate file type
-        if not image.content_type or not image.content_type.startswith('image/'):
+        # Validate file extension instead of content type
+        if not image.filename:
             raise HTTPException(
                 status_code=400, 
-                detail="File must be an image"
+                detail="File must have a filename"
+            )
+        
+        # Get file extension and check if it's a valid image format
+        file_extension = image.filename.lower().split('.')[-1] if '.' in image.filename else ''
+        valid_image_extensions = {'jpg', 'jpeg', 'png', 'bmp', 'gif', 'tiff', 'webp', 'tga', 'ico'}
+        
+        if file_extension not in valid_image_extensions:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"File must be an image. Supported formats: {', '.join(sorted(valid_image_extensions))}"
             )
         
         logger.info(f"Processing image: {image.filename}, size: {image.size} bytes, quality: {compress_size}")

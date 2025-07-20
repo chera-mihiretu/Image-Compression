@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dartz/dartz.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:mobile/cores/failures/failure.dart';
 import 'package:mobile/feature/image_compression/data/data_source/image_local_data_source.dart';
@@ -21,23 +23,64 @@ class ImageRepositoryImpl implements ImageRepository {
 
   @override
   Future<Either<Failure, CompressedImage>> compressAndSave({
-    required String filePath,
+    required Uint8List imageBytes,
+    String? originalPath,
   }) async {
     try {
-      final bytes = await remote.compressImage(filePath: filePath);
+      // Get compression quality from settings
+      final prefs = await SharedPreferences.getInstance();
+      final compressionQuality = prefs.getDouble('compression_quality') ?? 0.8;
+
+      // Convert from 0.0-1.0 scale to 60-100 scale for backend
+      final finalQuality = (compressionQuality * 100).round();
+      final clampedQuality = finalQuality < 60
+          ? 60
+          : (finalQuality > 100 ? 100 : finalQuality);
+
+      // Create a timestamp-based filename
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final imageName = 'image_$timestamp.jpg';
+
+      // Compress the image with the specified quality
+      final compressedBytes = await remote.compressImage(
+        imageBytes: imageBytes,
+        imageName: imageName,
+        compressionQuality: clampedQuality,
+      );
+
       final id = uuid.v4();
       final dir = await getApplicationDocumentsDirectory();
-      final compressedPath = '${dir.path}/compressed_$id.jpg';
-      final file = File(compressedPath);
-      await file.writeAsBytes(bytes);
 
+      // Create a unique filename for the compressed image
+      final fileName = 'compressed_${timestamp}_$id.jpg';
+      final compressedPath = '${dir.path}/$fileName';
+      final file = File(compressedPath);
+
+      // Save the compressed image locally
+      await file.writeAsBytes(compressedBytes);
+
+      // Verify the file was saved successfully
+      if (!await file.exists()) {
+        throw Exception('Failed to save compressed image locally');
+      }
+
+      // Verify file size is not zero
+      final fileSize = await file.length();
+      if (fileSize == 0) {
+        throw Exception('Compressed image file is empty');
+      }
+
+      // Create the entity with local path
       final entity = CompressedImage(
         id: id,
-        originalPath: filePath,
-        compressedPath: compressedPath,
+        originalPath: originalPath ?? 'unknown',
+        compressedPath: compressedPath, // This is the local path
         createdAt: DateTime.now(),
       );
+
+      // Save the metadata to local storage (Hive database)
       await local.saveImage(CompressedImageModel.fromEntity(entity));
+
       return right(entity);
     } catch (e) {
       return left(NetworkFailure(e.toString()));

@@ -35,6 +35,9 @@ class _ImageListPageState extends State<ImageListPage>
   String _storageUsed = '0 B';
   String _avgQuality = '80%';
 
+  bool _isPreviewDialogShowing = false;
+  bool _isLoadingDialogShowing = false;
+
   @override
   void initState() {
     super.initState();
@@ -116,20 +119,25 @@ class _ImageListPageState extends State<ImageListPage>
   void _showPreviewDialog(BuildContext context, String imagePath) {
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true, // Allow tapping outside to dismiss
       builder: (context) => ImagePreviewDialog(
         imagePath: imagePath,
         onCompress: () {
           Navigator.of(context).pop();
+          _isPreviewDialogShowing = false;
           context.read<ImageBloc>().add(ImageCompressRequested(imagePath));
         },
         onCancel: () {
           Navigator.of(context).pop();
+          _isPreviewDialogShowing = false;
           // Reset the state
           context.read<ImageBloc>().add(const ImageHistoryRequested());
         },
       ),
-    );
+    ).then((_) {
+      // Reset flag if dialog is dismissed by other means (back button, tap outside)
+      _isPreviewDialogShowing = false;
+    });
   }
 
   void _showLoadingDialog(BuildContext context) {
@@ -138,6 +146,21 @@ class _ImageListPageState extends State<ImageListPage>
       barrierDismissible: false,
       builder: (context) => const UploadLoadingDialog(),
     );
+  }
+
+  void _showSuccessDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const UploadLoadingDialog(isSuccess: true),
+    );
+
+    // Auto-dismiss after 1.5 seconds
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    });
   }
 
   @override
@@ -160,23 +183,34 @@ class _ImageListPageState extends State<ImageListPage>
         backgroundColor: AppTheme.backgroundColor,
         child: BlocListener<ImageBloc, ImageState>(
           listener: (context, state) {
-            // Show preview dialog when needed
-            if (state.showPreview && state.selectedImagePath != null) {
+            // Show preview dialog when needed (only if not already showing)
+            if (state.showPreview &&
+                state.selectedImagePath != null &&
+                !_isPreviewDialogShowing) {
+              _isPreviewDialogShowing = true;
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 _showPreviewDialog(context, state.selectedImagePath!);
               });
             }
 
-            // Show loading dialog during compression only (not during history loading)
-            if (state.isCompressing) {
+            // Show loading dialog during compression only (only if not already showing)
+            if (state.isCompressing && !_isLoadingDialogShowing) {
+              _isLoadingDialogShowing = true;
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 _showLoadingDialog(context);
               });
-            } else {
-              // Hide loading dialog when not compressing
-              if (Navigator.of(context).canPop()) {
-                Navigator.of(context).pop();
-              }
+            } else if (state.isCompressing == false &&
+                state.failure == null &&
+                state.images.isNotEmpty &&
+                _isLoadingDialogShowing) {
+              // Show success dialog when compression is complete and successful
+              _isLoadingDialogShowing = false;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (Navigator.of(context).canPop()) {
+                  Navigator.of(context).pop(); // Dismiss loading dialog
+                }
+                _showSuccessDialog(context); // Show success dialog
+              });
             }
           },
           child: Stack(
@@ -471,6 +505,7 @@ class _ImageListPageState extends State<ImageListPage>
                   ],
                 ),
                 child: FloatingActionButton.extended(
+                  heroTag: "camera_fab",
                   onPressed: () => context.read<ImageBloc>().add(
                     const ImagePickRequested(fromCamera: true),
                   ),
@@ -500,6 +535,7 @@ class _ImageListPageState extends State<ImageListPage>
                   ],
                 ),
                 child: FloatingActionButton.extended(
+                  heroTag: "gallery_fab",
                   onPressed: () => context.read<ImageBloc>().add(
                     const ImagePickRequested(fromCamera: false),
                   ),
